@@ -7,7 +7,7 @@
 #include <iostream>
 
 #include "common.h"
-#include "sophus/se3.hpp"
+#include <sophus/se3.hpp>
 
 using namespace Sophus;
 using namespace Eigen;
