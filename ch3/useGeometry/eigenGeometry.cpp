@@ -59,5 +59,15 @@ int main(int argc, char **argv) {
   // 用常规向量乘法表示，则应该如下计算
   cout << "should be equal to " << (q * Quaterniond(0, 1, 0, 0) * q.inverse()).coeffs().transpose() << endl;
 
+
+  Eigen::Isometry3d iso = Eigen::Isometry3d::Identity();
+  std::cout << iso.matrix() << "\n";
+
+  Eigen::AngleAxisd rotvec(M_PI/3, Eigen::Vector3d::UnitX());
+  // iso.translate(Eigen::Vector3d(1, 2, 3));
+  iso.rotate(rotvec);
+  iso.pretranslate(Eigen::Vector3d(1, 2, 3));
+  std::cout << iso.matrix() << "\n";
+
   return 0;
 }
