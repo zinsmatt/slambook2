@@ -5,9 +5,12 @@ set(CMAKE_BUILD_TYPE "Release")
 add_definitions("-DENABLE_SSE")
 set(CMAKE_CXX_FLAGS "-std=c++11 ${SSE_FLAGS} -g -O3 -march=native")
 
-find_package(OpenCV 4 REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(Sophus REQUIRED)
 find_package(Pangolin REQUIRED)
+# Ceres
+find_package(Ceres REQUIRED)
+include_directories(${CERES_INCLUDE_DIRS})
 
 include_directories(
         ${OpenCV_INCLUDE_DIRS}
@@ -18,7 +21,18 @@ include_directories(
 )
 
 add_executable(optical_flow optical_flow.cpp)
-target_link_libraries(optical_flow ${OpenCV_LIBS})
+target_link_libraries(optical_flow ${OpenCV_LIBS} Sophus::Sophus)
+
+
+add_executable(optical_flow_lk optical_flow_lk.cpp)
+target_link_libraries(optical_flow_lk ${OpenCV_LIBS} Sophus::Sophus)
 
 add_executable(direct_method direct_method.cpp)
-target_link_libraries(direct_method ${OpenCV_LIBS} ${Pangolin_LIBRARIES})
+target_link_libraries(direct_method ${OpenCV_LIBS} ${Pangolin_LIBRARIES} Sophus::Sophus)
+
+add_executable(direct_method_gn direct_method_gn.cpp)
+target_link_libraries(direct_method_gn ${OpenCV_LIBS} Sophus::Sophus)
+
+
+add_executable(direct_method_ceres direct_method_ceres.cpp)
+target_link_libraries(direct_method_ceres ${OpenCV_LIBS} ${CERES_LIBRARIES} Sophus::Sophus)

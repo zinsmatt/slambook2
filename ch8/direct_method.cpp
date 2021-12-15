@@ -12,9 +12,9 @@ double fx = 718.856, fy = 718.856, cx = 607.1928, cy = 185.2157;
 // baseline
 double baseline = 0.573;
 // paths
-string left_file = "./left.png";
-string disparity_file = "./disparity.png";
-boost::format fmt_others("./%06d.png");    // other files
+string left_file = "../left.png";
+string disparity_file = "../disparity.png";
+boost::format fmt_others("../%06d.png");    // other files
 
 // useful typedefs
 typedef Eigen::Matrix<double, 6, 6> Matrix6d;
@@ -99,7 +99,8 @@ void DirectPoseEstimationSingleLayer(
     const cv::Mat &img2,
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
-    Sophus::SE3d &T21
+    Sophus::SE3d &T21,
+    int i
 );
 
 // bilinear interpolation
@@ -126,7 +127,7 @@ int main(int argc, char **argv) {
     cv::Mat disparity_img = cv::imread(disparity_file, 0);
 
     // let's randomly pick pixels in the first image and generate some 3d points in the first image's frame
-    cv::RNG rng;
+    cv::RNG rng(1994);;
     int nPoints = 2000;
     int boarder = 20;
     VecVector2d pixels_ref;
@@ -148,8 +149,8 @@ int main(int argc, char **argv) {
     for (int i = 1; i < 6; i++) {  // 1~10
         cv::Mat img = cv::imread((fmt_others % i).str(), 0);
         // try single layer by uncomment this line
-        // DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);
-        DirectPoseEstimationMultiLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);
+        DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref, i);
+        // DirectPoseEstimationMultiLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);
     }
     return 0;
 }
@@ -159,23 +160,25 @@ void DirectPoseEstimationSingleLayer(
     const cv::Mat &img2,
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
-    Sophus::SE3d &T21) {
+    Sophus::SE3d &T21, int it) {
 
-    const int iterations = 10;
+    const int iterations = 11;
     double cost = 0, lastCost = 0;
     auto t1 = chrono::steady_clock::now();
     JacobianAccumulator jaco_accu(img1, img2, px_ref, depth_ref, T21);
 
     for (int iter = 0; iter < iterations; iter++) {
         jaco_accu.reset();
-        cv::parallel_for_(cv::Range(0, px_ref.size()),
-                          std::bind(&JacobianAccumulator::accumulate_jacobian, &jaco_accu, std::placeholders::_1));
+        // cv::parallel_for_(cv::Range(0, px_ref.size()),
+        //                   std::bind(&JacobianAccumulator::accumulate_jacobian, &jaco_accu, std::placeholders::_1));
+        jaco_accu.accumulate_jacobian(cv::Range(0, px_ref.size()));
         Matrix6d H = jaco_accu.hessian();
         Vector6d b = jaco_accu.bias();
 
         // solve update and put it into estimation
+        // std::cout << b.transpose() << "\n";
+
         Vector6d update = H.ldlt().solve(b);;
-        T21 = Sophus::SE3d::exp(update) * T21;
         cost = jaco_accu.cost_func();
 
         if (std::isnan(update[0])) {
@@ -187,19 +190,22 @@ void DirectPoseEstimationSingleLayer(
             cout << "cost increased: " << cost << ", " << lastCost << endl;
             break;
         }
+        T21 = Sophus::SE3d::exp(update) * T21;
         if (update.norm() < 1e-3) {
             // converge
             break;
         }
 
         lastCost = cost;
-        cout << "iteration: " << iter << ", cost: " << cost << endl;
+        // cout << "iteration: " << iter << ", cost: " << cost << endl;
     }
 
-    cout << "T21 = \n" << T21.matrix() << endl;
+    
+    std::cout << "translation: " << T21.translation().transpose() << "\n";
+    std::cout << "rotation: " << T21.so3().unit_quaternion().toRotationMatrix() << "\n";
     auto t2 = chrono::steady_clock::now();
     auto time_used = chrono::duration_cast<chrono::duration<double>>(t2 - t1);
-    cout << "direct method for single layer: " << time_used.count() << endl;
+    // cout << "direct method for single layer: " << time_used.count() << endl;
 
     // plot the projected pixels here
     cv::Mat img2_show;
@@ -214,8 +220,9 @@ void DirectPoseEstimationSingleLayer(
                      cv::Scalar(0, 250, 0));
         }
     }
-    cv::imshow("current", img2_show);
-    cv::waitKey();
+    // cv::imshow("current", img2_show);
+    // cv::waitKey();
+    cv::imwrite("img_" + std::to_string(it) + "_gt.png", img2_show);
 }
 
 void JacobianAccumulator::accumulate_jacobian(const cv::Range &range) {
@@ -246,6 +253,7 @@ void JacobianAccumulator::accumulate_jacobian(const cv::Range &range) {
             Z2 = Z * Z, Z_inv = 1.0 / Z, Z2_inv = Z_inv * Z_inv;
         cnt_good++;
 
+        // std::cout << point_cur.transpose() << "\n";
         // and compute error and jacobian
         for (int x = -half_patch_size; x <= half_patch_size; x++)
             for (int y = -half_patch_size; y <= half_patch_size; y++) {
@@ -283,6 +291,7 @@ void JacobianAccumulator::accumulate_jacobian(const cv::Range &range) {
             }
     }
 
+    // std::cout << cnt_good << "\n";
     if (cnt_good) {
         // set hessian, bias and cost
         unique_lock<mutex> lck(hessian_mutex);
@@ -333,7 +342,7 @@ void DirectPoseEstimationMultiLayer(
         fy = fyG * scales[level];
         cx = cxG * scales[level];
         cy = cyG * scales[level];
-        DirectPoseEstimationSingleLayer(pyr1[level], pyr2[level], px_ref_pyr, depth_ref, T21);
+        DirectPoseEstimationSingleLayer(pyr1[level], pyr2[level], px_ref_pyr, depth_ref, T21, 0);
     }
 
 }

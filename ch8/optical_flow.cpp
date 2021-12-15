@@ -11,8 +11,8 @@
 using namespace std;
 using namespace cv;
 
-string file_1 = "./LK1.png";  // first image
-string file_2 = "./LK2.png";  // second image
+string file_1 = "../LK1.png";  // first image
+string file_2 = "../LK2.png";  // second image
 
 /// Optical flow tracker and interface
 class OpticalFlowTracker {
@@ -23,7 +23,7 @@ public:
         const vector<KeyPoint> &kp1_,
         vector<KeyPoint> &kp2_,
         vector<bool> &success_,
-        bool inverse_ = true, bool has_initial_ = false) :
+        bool inverse_ = false, bool has_initial_ = false) :
         img1(img1_), img2(img2_), kp1(kp1_), kp2(kp2_), success(success_), inverse(inverse_),
         has_initial(has_initial_) {}
 
@@ -169,8 +169,11 @@ int main(int argc, char **argv) {
     }
 
     cv::imshow("tracked single level", img2_single);
+    cv::imwrite("single_level.png", img2_single);
     cv::imshow("tracked multi level", img2_multi);
+    cv::imwrite("multi_level.png", img2_multi);
     cv::imshow("tracked by opencv", img2_CV);
+    cv::imwrite("opencv.png", img2_CV);
     cv::waitKey(0);
 
     return 0;
