@@ -15,17 +15,111 @@ find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 
 # g2o
-find_package(G2O REQUIRED)
-include_directories(${G2O_INCLUDE_DIRS})
+find_package(PythonLibs 3.6)
+
+find_package(g2o REQUIRED
+             COMPONENTS
+             g2o::core
+             g2o::stuff
+             g2o::types_sba
+             g2o::types_sim3
+             g2o::solver_dense
+             g2o::solver_eigen
+             g2o::solver_csparse
+             g2o::csparse_extension
+             g2o::types_slam2d
+             g2o::types_slam3d
+             OPTIONAL_COMPONENTS
+             g2o::csparse)
+
 
 # Eigen
 include_directories("/usr/include/eigen3")
 
-add_executable(gaussNewton gaussNewton.cpp)
-target_link_libraries(gaussNewton ${OpenCV_LIBS})
+
+
+
+add_executable(steepestDescent steepest_descent.cpp)
+target_include_directories(steepestDescent SYSTEM PUBLIC
+    ${PYTHON_INCLUDE_DIRS}
+    "/home/mzins/lib/matplotlib-cpp"
+)
+target_link_libraries(steepestDescent 
+${OpenCV_LIBS}
+${PYTHON_LIBRARIES}
+)
+
+
+
+add_executable(newton newton.cpp)
+target_include_directories(newton SYSTEM PUBLIC
+    ${PYTHON_INCLUDE_DIRS}
+    "/home/mzins/lib/matplotlib-cpp"
+)
+target_link_libraries(newton 
+${OpenCV_LIBS}
+${PYTHON_LIBRARIES}
+)
+
+
+add_executable(gaussNewton gauss_newton.cpp)
+target_include_directories(gaussNewton SYSTEM PUBLIC
+    ${PYTHON_INCLUDE_DIRS}
+    "/home/mzins/lib/matplotlib-cpp"
+)
+target_link_libraries(gaussNewton 
+${OpenCV_LIBS}
+${PYTHON_LIBRARIES}
+)
+
+add_executable(curve_fitting_ceres curve_fitting_ceres.cpp)
+target_include_directories(curve_fitting_ceres SYSTEM PUBLIC
+    ${PYTHON_INCLUDE_DIRS}
+    "/home/mzins/lib/matplotlib-cpp"
+)
+target_link_libraries(curve_fitting_ceres 
+${OpenCV_LIBS}
+${PYTHON_LIBRARIES}
+${CERES_LIBRARIES}
+)
+
+add_executable(curve_fitting_g2o curve_fitting_g2o.cpp)
+target_include_directories(curve_fitting_g2o SYSTEM PUBLIC
+    ${PYTHON_INCLUDE_DIRS}
+    "/home/mzins/lib/matplotlib-cpp"
+)
+target_link_libraries(curve_fitting_g2o 
+${OpenCV_LIBS}
+${PYTHON_LIBRARIES}
+g2o::core
+g2o::stuff
+g2o::types_sba
+g2o::types_sim3
+g2o::solver_dense
+g2o::solver_eigen
+g2o::solver_csparse
+g2o::csparse_extension
+g2o::types_slam2d
+g2o::types_slam3d
+)
+
+
+add_executable(gaussNewton_slambook gaussNewton.cpp)
+target_link_libraries(gaussNewton_slambook ${OpenCV_LIBS})
 
 add_executable(ceresCurveFitting ceresCurveFitting.cpp)
 target_link_libraries(ceresCurveFitting ${OpenCV_LIBS} ${CERES_LIBRARIES})
 
 add_executable(g2oCurveFitting g2oCurveFitting.cpp)
-target_link_libraries(g2oCurveFitting ${OpenCV_LIBS} ${G2O_CORE_LIBRARY} ${G2O_STUFF_LIBRARY})
+target_link_libraries(g2oCurveFitting ${OpenCV_LIBS} 
+g2o::core
+g2o::stuff
+g2o::types_sba
+g2o::types_sim3
+g2o::solver_dense
+g2o::solver_eigen
+g2o::solver_csparse
+g2o::csparse_extension
+g2o::types_slam2d
+g2o::types_slam3d
+)
