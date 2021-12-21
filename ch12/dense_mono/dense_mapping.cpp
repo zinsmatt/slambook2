@@ -28,7 +28,7 @@ using namespace cv;
 * 使用极线搜索 + NCC 匹配的方式，与书本的 12.2 节对应
 * 请注意本程序并不完美，你完全可以改进它——我其实在故意暴露一些问题(这是借口)。
 ***********************************************/
-
+std::ofstream debug("debug.txt");
 // ------------------------------------------------------------------
 // parameters
 const int boarder = 20;         // 边缘宽度
@@ -62,7 +62,7 @@ bool readDatasetFiles(
  * @param depth_cov     深度方差
  * @return              是否成功
  */
-bool update(
+void update(
     const Mat &ref,
     const Mat &curr,
     const SE3d &T_C_R,
@@ -206,6 +206,7 @@ int main(int argc, char **argv) {
         SE3d pose_T_C_R = pose_curr_TWC.inverse() * pose_ref_TWC;   // 坐标转换关系： T_C_W * T_W_R = T_C_R
         update(ref, curr, pose_T_C_R, depth, depth_cov2);
         evaludateDepth(ref_depth, depth);
+        std::cout << "after eval depth " << std::endl;
         plotDepth(ref_depth, depth);
         imshow("image", curr);
         waitKey(1);
@@ -215,6 +216,7 @@ int main(int argc, char **argv) {
     imwrite("depth.png", depth);
     cout << "done." << endl;
 
+    debug.close();
     return 0;
 }
 
@@ -257,10 +259,13 @@ bool readDatasetFiles(
 }
 
 // 对整个深度图进行更新
-bool update(const Mat &ref, const Mat &curr, const SE3d &T_C_R, Mat &depth, Mat &depth_cov2) {
+void update(const Mat &ref, const Mat &curr, const SE3d &T_C_R, Mat &depth, Mat &depth_cov2) {
+    std::cout << curr.size() << "\n";
     for (int x = boarder; x < width - boarder; x++)
+    {
         for (int y = boarder; y < height - boarder; y++) {
             // 遍历每个像素
+            // std::cout << depth.size() << " " << depth_cov2.size() << "\n";
             if (depth_cov2.ptr<double>(y)[x] < min_cov || depth_cov2.ptr<double>(y)[x] > max_cov) // 深度已收敛或发散
                 continue;
             // 在极线上搜索 (x,y) 的匹配
@@ -280,12 +285,15 @@ bool update(const Mat &ref, const Mat &curr, const SE3d &T_C_R, Mat &depth, Mat 
             if (ret == false) // 匹配失败
                 continue;
 
+            // debug << epipolar_direction.transpose() << "\n";
+
             // 取消该注释以显示匹配
             // showEpipolarMatch(ref, curr, Vector2d(x, y), pt_curr);
 
             // 匹配成功，更新深度图
             updateDepthFilter(Vector2d(x, y), pt_curr, T_C_R, epipolar_direction, depth, depth_cov2);
         }
+    }
 }
 
 // 极线搜索
@@ -401,6 +409,7 @@ bool updateDepthFilter(
     Vector3d xn = t + ans[1] * f2;          // cur 结果
     Vector3d p_esti = (xm + xn) / 2.0;      // P的位置，取两者的平均
     double depth_estimation = p_esti.norm();   // 深度值
+    // debug << depth_estimation << "\n";
 
     // 计算不确定性（以一个像素为误差）
     Vector3d p = f_ref * depth_estimation;
@@ -409,13 +418,16 @@ bool updateDepthFilter(
     double a_norm = a.norm();
     double alpha = acos(f_ref.dot(t) / t_norm);
     double beta = acos(-a.dot(t) / (a_norm * t_norm));
+    // debug << alpha << " " << beta << "\n";
     Vector3d f_curr_prime = px2cam(pt_curr + epipolar_direction);
     f_curr_prime.normalize();
     double beta_prime = acos(f_curr_prime.dot(-t) / t_norm);
+    // debug << beta_prime << "\n";
     double gamma = M_PI - alpha - beta_prime;
     double p_prime = t_norm * sin(beta_prime) / sin(gamma);
     double d_cov = p_prime - depth_estimation;
     double d_cov2 = d_cov * d_cov;
+    // debug << d_cov2  <<"\n";
 
     // 高斯融合
     double mu = depth.ptr<double>(int(pt_ref(1, 0)))[int(pt_ref(0, 0))];
@@ -424,6 +436,7 @@ bool updateDepthFilter(
     double mu_fuse = (d_cov2 * mu + sigma2 * depth_estimation) / (sigma2 + d_cov2);
     double sigma_fuse2 = (sigma2 * d_cov2) / (sigma2 + d_cov2);
 
+    // debug << mu_fuse << "\n";
     depth.ptr<double>(int(pt_ref(1, 0)))[int(pt_ref(0, 0))] = mu_fuse;
     depth_cov2.ptr<double>(int(pt_ref(1, 0)))[int(pt_ref(0, 0))] = sigma_fuse2;
 
@@ -443,12 +456,14 @@ void evaludateDepth(const Mat &depth_truth, const Mat &depth_estimate) {
     double ave_depth_error_sq = 0;      // 平方误差
     int cnt_depth_data = 0;
     for (int y = boarder; y < depth_truth.rows - boarder; y++)
+    {
         for (int x = boarder; x < depth_truth.cols - boarder; x++) {
-            double error = depth_truth.ptr<double>(y)[x] - depth_estimate.ptr<double>(y)[x];
+            double error = depth_truth.at<double>(y, x) - depth_estimate.at<double>(y, x);
             ave_depth_error += error;
             ave_depth_error_sq += error * error;
             cnt_depth_data++;
         }
+    }
     ave_depth_error /= cnt_depth_data;
     ave_depth_error_sq /= cnt_depth_data;
 

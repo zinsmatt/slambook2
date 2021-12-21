@@ -16,7 +16,14 @@ include_directories(${Sophus_INCLUDE_DIRS})
 
 set(THIRD_PARTY_LIBS
         ${OpenCV_LIBS}
-        ${Sophus_LIBRARIES})
+        Sophus::Sophus
+        )
 
 add_executable(dense_mapping dense_mapping.cpp)
 target_link_libraries(dense_mapping ${THIRD_PARTY_LIBS})
+
+add_executable(dense_mapping_custom dense_mapping_custom.cpp)
+target_link_libraries(dense_mapping_custom ${THIRD_PARTY_LIBS})
+
+add_executable(dense_mapping_custom_multithread dense_mapping_custom_multithread.cpp)
+target_link_libraries(dense_mapping_custom_multithread ${THIRD_PARTY_LIBS})
