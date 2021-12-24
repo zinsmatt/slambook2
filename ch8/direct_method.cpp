@@ -4,6 +4,7 @@
 #include <pangolin/pangolin.h>
 
 using namespace std;
+std::ofstream debug("debug_gt.txt");
 
 typedef vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> VecVector2d;
 
@@ -83,7 +84,8 @@ void DirectPoseEstimationMultiLayer(
     const cv::Mat &img2,
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
-    Sophus::SE3d &T21
+    Sophus::SE3d &T21,
+    int iter
 );
 
 /**
@@ -104,7 +106,7 @@ void DirectPoseEstimationSingleLayer(
 );
 
 // bilinear interpolation
-inline float GetPixelValue(const cv::Mat &img, float x, float y) {
+inline float GetPixelValue(const cv::Mat &img, float x, float y, int disp=0) {
     // boundary check
     if (x < 0) x = 0;
     if (y < 0) y = 0;
@@ -113,12 +115,17 @@ inline float GetPixelValue(const cv::Mat &img, float x, float y) {
     uchar *data = &img.data[int(y) * img.step + int(x)];
     float xx = x - floor(x);
     float yy = y - floor(y);
-    return float(
+    float f =
         (1 - xx) * (1 - yy) * data[0] +
         xx * (1 - yy) * data[1] +
         (1 - xx) * yy * data[img.step] +
-        xx * yy * data[img.step + 1]
-    );
+        xx * yy * data[img.step + 1];
+    if (disp) 
+    {
+        debug << std::fixed << std::setprecision(15) << x << " " << y << " " << xx << " " << yy << " " << f << "\n";
+        debug << (int) data[0] << " " << (int) data[1] << " " << (int) data[img.step] << " " << (int) data[img.step + 1] << "\n";
+    }
+    return f;
 }
 
 int main(int argc, char **argv) {
@@ -129,7 +136,7 @@ int main(int argc, char **argv) {
     // let's randomly pick pixels in the first image and generate some 3d points in the first image's frame
     cv::RNG rng(1994);;
     int nPoints = 2000;
-    int boarder = 20;
+    int boarder = 40;
     VecVector2d pixels_ref;
     vector<double> depth_ref;
 
@@ -148,10 +155,12 @@ int main(int argc, char **argv) {
 
     for (int i = 1; i < 6; i++) {  // 1~10
         cv::Mat img = cv::imread((fmt_others % i).str(), 0);
+    
         // try single layer by uncomment this line
-        DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref, i);
-        // DirectPoseEstimationMultiLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref);
+        // DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref, i);
+        DirectPoseEstimationMultiLayer(left_img, img, pixels_ref, depth_ref, T_cur_ref, i);
     }
+    debug.close();
     return 0;
 }
 
@@ -161,6 +170,14 @@ void DirectPoseEstimationSingleLayer(
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
     Sophus::SE3d &T21, int it) {
+
+// debug << img2.size() << "\n";
+//     for (int i = 20; i <= 40; ++i)
+//             for (int j = 20; j <= 40; ++j)
+//                 debug << (int)img2.at<uchar>(i, j) << " ";
+//         debug << "\n";
+
+//     debug << T21.matrix() << "\n";
 
     const int iterations = 11;
     double cost = 0, lastCost = 0;
@@ -177,7 +194,7 @@ void DirectPoseEstimationSingleLayer(
 
         // solve update and put it into estimation
         // std::cout << b.transpose() << "\n";
-
+        // debug << "H:\n" << H << "\n\n";
         Vector6d update = H.ldlt().solve(b);;
         cost = jaco_accu.cost_func();
 
@@ -244,6 +261,7 @@ void JacobianAccumulator::accumulate_jacobian(const cv::Range &range) {
             continue;
 
         float u = fx * point_cur[0] / point_cur[2] + cx, v = fy * point_cur[1] / point_cur[2] + cy;
+        // debug << u << " " << v << "\n";
         if (u < half_patch_size || u > img2.cols - half_patch_size || v < half_patch_size ||
             v > img2.rows - half_patch_size)
             continue;
@@ -279,18 +297,27 @@ void JacobianAccumulator::accumulate_jacobian(const cv::Range &range) {
 
                 J_img_pixel = Eigen::Vector2d(
                     0.5 * (GetPixelValue(img2, u + 1 + x, v + y) - GetPixelValue(img2, u - 1 + x, v + y)),
-                    0.5 * (GetPixelValue(img2, u + x, v + 1 + y) - GetPixelValue(img2, u + x, v - 1 + y))
+                    0.5 * (GetPixelValue(img2, u + x, v + 1 + y, 0) - GetPixelValue(img2, u + x, v - 1 + y))
                 );
-
                 // total jacobian
                 Vector6d J = -1.0 * (J_img_pixel.transpose() * J_pixel_xi).transpose();
+
+                // debug << u + 1 + x << " " << v + y << " " << u - 1 + x << " " << v + y << "\n";
+                // debug << img2.size() << "\n";
+                ////////debug << std::fixed << std::setprecision(15) << u + x << " " << v + 1 + y << "\n"; //" " << u + x << " " << v - 1 + y << "\n";
+
+                // debug << "pixels: " << GetPixelValue(img2, u + 1 + x, v + y) << " " << GetPixelValue(img2, u - 1 + x, v + y) << "\n";
+                ////////debug << "pixels: " << GetPixelValue(img2, u + x, v + 1 + y) << "\n"; //<< " " << GetPixelValue(img2, u + x, v - 1 + y) << "\n";
+                // debug << "dudRt: " << J_pixel_xi.transpose() << "\n";
+                // debug << u + x << " " << v + y << "\n";
+                // debug << "J:\n" << J.transpose() << "\n\n";
 
                 hessian += J * J.transpose();
                 bias += -error * J;
                 cost_tmp += error * error;
             }
+        // debug << "\n";
     }
-
     // std::cout << cnt_good << "\n";
     if (cnt_good) {
         // set hessian, bias and cost
@@ -306,8 +333,11 @@ void DirectPoseEstimationMultiLayer(
     const cv::Mat &img2,
     const VecVector2d &px_ref,
     const vector<double> depth_ref,
-    Sophus::SE3d &T21) {
+    Sophus::SE3d &T21,
+    int iter) {
 
+
+    
     // parameters
     int pyramids = 4;
     double pyramid_scale = 0.5;
@@ -342,7 +372,33 @@ void DirectPoseEstimationMultiLayer(
         fy = fyG * scales[level];
         cx = cxG * scales[level];
         cy = cyG * scales[level];
-        DirectPoseEstimationSingleLayer(pyr1[level], pyr2[level], px_ref_pyr, depth_ref, T21, 0);
+        std::cout << "=========> scale = " << scales[level] << "\n";
+        std::cout << fx << " " << fy << " " << cx << " " << cy << " \n";
+        std::cout << px_ref_pyr[0].transpose() << " " << px_ref_pyr[1].transpose() << "\n";
+        std::cout << pyr1[level].size() << " " << pyr2[level].size() << "\n";
+        DirectPoseEstimationSingleLayer(pyr1[level], pyr2[level], px_ref_pyr, depth_ref, T21, iter);
+    
+    cv::Mat img1 = pyr1[level];
+    cv::Mat img2 = pyr2[level];
+
+    // std::ofstream dbg("img1_debug_gt.txt");
+    // std::ofstream dbg2("img2_debug_gt.txt");
+    // for (int i = 0; i < img1.rows; ++i)
+    // {
+    //     for (int j = 0; j < img1.cols; ++j)
+    //     {
+    //         dbg << (int) img1.at<uchar>(i, j) << " ";
+    //         dbg2 << (int) img2.at<uchar>(i, j) << " ";
+    //     }
+    //     dbg << "\n";
+    //     dbg2 << "\n";
+    // }
+
+    // dbg.close();
+    // dbg2.close();
+
+        // break;
     }
+
 
 }

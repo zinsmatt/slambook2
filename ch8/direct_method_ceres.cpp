@@ -42,13 +42,12 @@ inline float get(const cv::Mat &img, float x, float y) {
     );
 }
 
-Eigen::Vector3d get_3D_point_from_depth(const Eigen::Vector2d& p, double depth)
+Eigen::Vector3d get_3D_point_from_depth(const Eigen::Vector2d& p, double depth, const Eigen::Matrix3d& K)
 {
-    return Eigen::Vector3d(depth * (p.x() - cx) / fx,
-                           depth * (p.y() - cy) / fy,
+    return Eigen::Vector3d(depth * (p.x() - K(0, 2)) / K(0, 0),
+                           depth * (p.y() - K(1, 2)) / K(1, 1),
                            depth);
 }
-
 
 using namespace Sophus;
 // Local parameterization needed to handle SE3 from Sophus (from Sophus/test/ceres/)
@@ -65,9 +64,7 @@ class LocalParameterizationSE3 : public ceres::LocalParameterization {
     Eigen::Map<SE3d const> const T(T_raw);
     Eigen::Map<Vector6d const> const delta(delta_raw);
     Eigen::Map<SE3d> T_plus_delta(T_plus_delta_raw);
-    T_plus_delta = T * SE3d::exp(delta); ///// check if good left or righ multiply ??????????????????
-    // std::cout << (SE3d::exp(delta) * T).matrix() << "\n";
-    // std::cout << (T * SE3d::exp(delta)).matrix() << "\n\n";
+    T_plus_delta = T * SE3d::exp(delta);
     return true;
   }
 
@@ -84,15 +81,19 @@ class LocalParameterizationSE3 : public ceres::LocalParameterization {
     return true;
   }
 
+
   virtual int GlobalSize() const { return SE3d::num_parameters; }
 
   virtual int LocalSize() const { return SE3d::DoF; }
 };
 
-struct PhotometricError: public ceres::SizedCostFunction<1, 7>
+
+
+struct PhotometricError: public ceres::SizedCostFunction<9, 7>
 {
-    PhotometricError(const cv::Mat& img1, const cv::Mat& img2, const Eigen::Vector2d& p1, const Eigen::Vector3d& P1, const Eigen::Matrix3d& K)
-    : _img1(img1), _img2(img2), _p1(p1), _P1(P1), _K(K) {}
+    PhotometricError(const cv::Mat& img1, const cv::Mat& img2, const Eigen::Vector2d& p1, const Eigen::Vector3d& P1, const Eigen::Matrix3d& K, int half_w_size)
+    : _img1(img1), _img2(img2), _p1(p1), _P1(P1), _K(K), _half_w_size(half_w_size) {}
+
 
     virtual bool Evaluate(double const* const *params,
                           double *residuals,
@@ -103,51 +104,163 @@ struct PhotometricError: public ceres::SizedCostFunction<1, 7>
         Eigen::Vector3d p2 = _K * P2;
         p2 /= p2.z();
 
-        double v1 = get(_img1, _p1.x(), _p1.y());
-        double v2 = get(_img2, p2.x(), p2.y());
-        double err = v1 - v2;
-        residuals[0] = err;
-
-        if (!jacobians) return true;
-        if (!jacobians[0]) return true;
-
         double fx = _K(0, 0);
         double fy = _K(1, 1);
         double cx = _K(0, 2);
         double cy = _K(1, 2);
-        double X2 = std::pow(P2.x(), 2);
-        double Y2 = std::pow(P2.y(), 2);
-        double Z2 = std::pow(P2.z(), 2);
+        double X = P2.x();
+        double Y = P2.y();
+        double Z = P2.z();
+        double X2 = X * X;
+        double Y2 = Y * Y;
+        double Z2 = Z * Z;
+
+        double x3 = _P1.x();
+        double y3 = _P1.y();
+        double z3 = _P1.z();
+        double qx = params[0][0];
+        double qy = params[0][1];
+        double qz = params[0][2];
+        double qw = params[0][3];
 
 
-        int xx = 0, yy = 0;
-        double dx = 0.5 * (get(_img2, p2.x() + xx + 1, p2.y() + yy) - get(_img2, p2.x() + xx - 1, p2.y() + yy));
-        double dy = 0.5 * (get(_img2, p2.x() + xx, p2.y() + yy + 1) - get(_img2, p2.x() + xx, p2.y() + yy - 1));
-        Eigen::Vector2d dIdu(dx, dy);
-        Eigen::Matrix<double, 2, 6> dudRt;
-        dudRt << fx/P2.z(), 0.0, -fx*P2.x() / Z2,-fx * P2.x() * P2.y() / Z2, fx + fx * X2 / Z2, -fx * P2.y() / P2.z(),
-                 0.0, fy / P2.z(), -fy*P2.y()/Z2, -fy-fy * Y2 / Z2, fy * P2.x() * P2.y() / Z2, fy * P2.x() / P2.z();
-        Eigen::Matrix<double, 6, 1> J = -(dIdu.transpose() * dudRt).transpose();
-        jacobians[0][0] = J(0, 0);
-        jacobians[0][1] = J(1, 0);
-        jacobians[0][2] = J(2, 0);
-        jacobians[0][3] = J(3, 0);
-        jacobians[0][4] = J(4, 0);
-        jacobians[0][5] = J(5, 0);
-        jacobians[0][6] = 0.0;
+        if (P2.z() < 0) // invalid depth
+        {
+            // fill residuals and jacobians to 0
+            for (int i = 0; i < 9; ++i)
+            {
+                residuals[i] = 0;
+                if (jacobians!=nullptr && jacobians[0]!=nullptr)
+                {
+                    for (int j = 0; j < 7; ++j)
+                    {
+                        jacobians[0][i*7+j] = 0.0;
+                    }
+                }
+            }
+            return true;
+        }
+
+        if (p2.x() < _half_w_size || p2.x() > _img2.cols - _half_w_size 
+            || p2.y() < _half_w_size || p2.y() > _img2.rows - _half_w_size)
+        {
+            // fill residuals and jacobians to 0
+            for (int i = 0; i < 9; ++i)
+            {
+                residuals[i] = 0;
+                if (jacobians!=nullptr && jacobians[0]!=nullptr)
+                {
+                    for (int j = 0; j < 7; ++j)
+                    {
+                        jacobians[0][i*7+j] = 0.0;
+                    }
+                }
+            }
+            return true;
+        }
+
+        int cnt = 0;
+        for (int xx = -_half_w_size; xx <= _half_w_size; ++xx)
+        {
+            for (int yy = -_half_w_size; yy <= _half_w_size; ++yy)
+            {
+
+                double v1 = get(_img1, _p1.x() + xx, _p1.y() + yy);
+                double v2 = get(_img2,  p2.x() + xx, p2.y() + yy);
+                double err = v1 - v2;
+                residuals[cnt] = err;
+
+                if (jacobians && jacobians[0])
+                {
+                    double dx = 0.5 * (get(_img2, p2.x() + xx + 1, p2.y() + yy) - get(_img2, p2.x() + xx - 1, p2.y() + yy));
+                    double dy = 0.5 * (get(_img2, p2.x() + xx, p2.y() + yy + 1) - get(_img2, p2.x() + xx, p2.y() + yy - 1));
+                    Eigen::Vector2d dIdu(dx, dy);
+
+                    Eigen::Matrix<double, 2, 3> dudXc;
+                    dudXc << fx / Z, 0.0, -X * fx / Z2,
+                            0.0, fy / Z, -Y * fy / Z2;
+                    
+
+                    Eigen::Matrix<double, 3, 4> dXcdq; // derivative of Xcam wrt. quaternions
+                    dXcdq(0, 0) = 2*qy*y3 + 2*qz*z3;
+                    dXcdq(0, 1) = 2*qw*z3 + 2*qx*y3 - 4*qy*x3;
+                    dXcdq(0, 2) = -2*qw*y3 + 2*qx*z3 - 4*qz*x3;
+                    dXcdq(0, 3) = 2*qy*z3 - 2*qz*y3;
+
+                    dXcdq(1, 0) = -2*qw*z3 - 4*qx*y3 + 2*qy*x3;
+                    dXcdq(1, 1) = 2*qx*x3 + 2*qz*z3;
+                    dXcdq(1, 2) = 2*qw*x3 + 2*qy*z3 - 4*qz*y3;
+                    dXcdq(1, 3) = -2*qx*z3 + 2*qz*x3;
+
+                    dXcdq(2, 0) = 2*qw*y3 - 4*qx*z3 + 2*qz*x3;
+                    dXcdq(2, 1) = -2*qw*x3 - 4*qy*z3 + 2*qz*y3;
+                    dXcdq(2, 2) = 2*qx*x3 + 2*qy*y3;
+                    dXcdq(2, 3) = 2*qx*y3 - 2*qy*x3;
+
+                    Eigen::Matrix<double, 1, 7, Eigen::RowMajor> J;
+                    J.block<1, 4>(0, 0) = -dIdu.transpose() * dudXc * dXcdq;
+                    J.block<1, 3>(0, 4) = -dIdu.transpose() * dudXc;
+
+                    for (int i = 0; i < 7; ++i)
+                    {
+                        jacobians[0][cnt*7 + i] = J(0, i);
+                    }
+                }
+                ++cnt;
+            }
+        }
 
         return true;
     }
-
-
-
 
     private:
         cv::Mat _img1, _img2;
         Eigen::Vector2d _p1;
         Eigen::Vector3d _P1;
         Eigen::Matrix3d _K;
+        int _half_w_size;
+
 };
+
+// TO TEST with autodiff or numeric diff, but not easy to differentiate wrt. image (maybe try to combine Jets + image gradient with chain rule)
+// struct PhotometricError
+// {
+//     PhotometricError(const cv::Mat& img1, const cv::Mat& img2, const Eigen::Vector2d& p1, const Eigen::Vector3d& P1, const Eigen::Matrix3d& K, int half_w_size)
+//     : _img1(img1), _img2(img2), _p1(p1), _P1(P1), _K(K), _half_w_size(half_w_size) {}
+
+//     virtual bool operator() (const double* const params,
+//                              double *residuals) const {
+//         const Eigen::Map<const Sophus::SE3d> Rt(params);
+
+//         Eigen::Vector3d P2 = Rt * _P1;
+//         Eigen::Vector3d p2 = _K * P2;
+//         p2 /= p2.z();
+
+//         int j = 0;
+//         for (int xx = -_half_w_size; xx <= _half_w_size; ++xx)
+//         {
+//             for (int yy = -_half_w_size; yy <= _half_w_size; ++yy)
+//             {
+//                 double v1 = get(_img1, _p1.x() + xx, _p1.y() + yy);
+//                 double v2 = get(_img2, p2.x() + xx, p2.y() + yy);
+//                 // debug << _p1.x() << " " << _p1.y() << " " << p2.x() << " " << p2.y() << "\n";
+//                 debug << v1 << " " << v2 << "\n";
+//                 double err = v1 - v2;
+//                 residuals[j++] = err;
+//             }
+//         }
+
+//         return true;
+//     }
+
+
+//     private:
+//         cv::Mat _img1, _img2;
+//         Eigen::Vector2d _p1;
+//         Eigen::Vector3d _P1;
+//         Eigen::Matrix3d _K;
+//         int _half_w_size;
+// };
 
 
 /**
@@ -167,29 +280,30 @@ void DirectPoseEstimationSingleLayer(
     Sophus::SE3d &Rt // points from cam1 reference frame to cam2
 )
 {
-    int nb_iters = 10;
-    int half_w_size = 2;
-    double prev_cost = 0.0;
+    int nb_iters = 11;
+    int half_w_size = 1;
 
     ceres::Problem problem;
 
     problem.AddParameterBlock(Rt.data(), 7, new LocalParameterizationSE3());
-std::cout << "AFTER add parameters bloxk" << std::endl;
     for (int i = 0; i < px_ref.size(); ++i)
     {
         const auto& p1 = px_ref[i];
-        Eigen::Vector3d P1 = get_3D_point_from_depth(p1, depth_ref[i]);
+        Eigen::Vector3d P1 = get_3D_point_from_depth(p1, depth_ref[i], K);
         problem.AddResidualBlock(
-            new PhotometricError(img1, img2, p1, P1, K),
+            // new ceres::NumericDiffCostFunction<PhotometricError, ceres::CENTRAL, 9, 7>(
+            //     new PhotometricError(img1, img2, p1, P1, K, half_w_size)
+            // ),            
+            new PhotometricError(img1, img2, p1, P1, K, half_w_size),
             nullptr,
             Rt.data()
         );
     }
-std::cout << "AFTER ad dresiduals block" << std::endl;
 
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_NORMAL_CHOLESKY;
-    options.minimizer_progress_to_stdout = true;
+    options.minimizer_progress_to_stdout = false;
+    options.max_num_iterations = 11;
 
     ceres::Solver::Summary summary;
 
@@ -214,16 +328,37 @@ void DirectPoseEstimationPyramidal(
     const Eigen::Matrix3d& K,
     Sophus::SE3d &Rt)
 {
-    int nb_levels = 1;
-    double factor = 2.0;
-    double scale = 1.0 / std::pow(factor, nb_levels-1);
+    int nb_levels = 4;
+    double factor = 0.5;
 
-
-    for (int l = 0; l < nb_levels; ++l)
+    std::vector<cv::Mat> pyr1, pyr2;
+    std::vector<double> scales;
+    for (int i = 0; i < nb_levels; ++i)
     {
-        cv::Mat img1_r, img2_r;
-        cv::resize(img1, img1_r, cv::Size(), scale, scale);
-        cv::resize(img2, img2_r, cv::Size(), scale, scale);
+        if (i == 0)
+        {
+            pyr1.push_back(img1);
+            pyr2.push_back(img2);
+            scales.push_back(1.0);
+        }
+        else
+        {
+            cv::Mat img1_r, img2_r;
+            cv::resize(pyr1[i-1], img1_r, cv::Size(pyr1[i-1].cols * factor, pyr1[i-1].rows * factor));
+            cv::resize(pyr2[i-1], img2_r, cv::Size(pyr2[i-1].cols * factor, pyr2[i-1].rows * factor));
+            pyr1.push_back(img1_r);            
+            pyr2.push_back(img2_r);            
+            scales.push_back(scales[i-1] * factor);
+        }
+    }
+
+
+    for (int l = nb_levels-1; l >= 0; l--)
+    {
+
+        cv::Mat img1_r = pyr1[l];
+        cv::Mat img2_r = pyr2[l];
+        double scale = scales[l];
 
         Eigen::Matrix3d K_r = K;
         K_r(0, 0) *= scale;
@@ -237,13 +372,20 @@ void DirectPoseEstimationPyramidal(
         }
 
         DirectPoseEstimationSingleLayer(img1_r, img2_r, p_r, depth_ref, K_r, Rt);
-
-        scale *= factor;
     }
 }
 
 
 int main(int argc, char **argv) {
+
+Sophus::SE3d r;
+Eigen::Matrix<double, 6, 1> d;
+d << 1, 2, 3, 0, 0, 0;
+r =  Sophus::SE3d::exp(d) * r;
+double* rr = r.data();
+for (int i = 0; i<7;++i)
+std::cout << rr[i] << " ";
+cout << "\n\n";
 
     cv::Mat left_img = cv::imread(left_file, 0);
     cv::Mat disparity_img = cv::imread(disparity_file, 0);
@@ -251,7 +393,7 @@ int main(int argc, char **argv) {
     // let's randomly pick pixels in the first image and generate some 3d points in the first image's frame
     cv::RNG rng(1994);
     int nPoints = 2000;
-    int boarder = 20;
+    int boarder = 40;
     VecVector2d pixels_ref;
     vector<double> depth_ref;
 
@@ -273,11 +415,11 @@ int main(int argc, char **argv) {
          0.0, fy, cy,
          0.0, 0.0, 1.0;
 
-    for (int i = 1; i < 2; i++) {  // 1~10
+    for (int i = 1; i < 6; i++) {  // 1~10
         cv::Mat img = cv::imread((fmt_others % i).str(), 0);
         // try single layer by uncomment this line
-        DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, K, Rt);
-        // DirectPoseEstimationPyramidal(left_img, img, pixels_ref, depth_ref, K, Rt);
+        // DirectPoseEstimationSingleLayer(left_img, img, pixels_ref, depth_ref, K, Rt);
+        DirectPoseEstimationPyramidal(left_img, img, pixels_ref, depth_ref, K, Rt);
 
 
         // plot the projected pixels here
@@ -286,7 +428,7 @@ int main(int argc, char **argv) {
         std::vector<Eigen::Vector2d> projections(pixels_ref.size());
         for (int i = 0; i < pixels_ref.size(); ++i)
         {
-            Eigen::Vector3d P_ref = get_3D_point_from_depth(pixels_ref[i], depth_ref[i]);
+            Eigen::Vector3d P_ref = get_3D_point_from_depth(pixels_ref[i], depth_ref[i], K);
             Eigen::Vector3d uv = K * (Rt * P_ref);
             projections[i] = uv.hnormalized();
         }
@@ -294,16 +436,17 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < pixels_ref.size(); ++i) {
             auto p_ref = pixels_ref[i];
             auto p_cur = projections[i];
-            if (p_cur[0] > 0 && p_cur[1] > 0) {
+            if (p_cur[0] > 0 && p_cur[1] > 0 && p_cur[0] < img2_show.cols && p_cur[1] < img2_show.rows) {
                 cv::circle(img2_show, cv::Point2f(p_cur[0], p_cur[1]), 2, cv::Scalar(0, 250, 0), 2);
                 cv::line(img2_show, cv::Point2f(p_ref[0], p_ref[1]), cv::Point2f(p_cur[0], p_cur[1]),
                         cv::Scalar(0, 250, 0));
             }
         }
-        cv::imshow("current", img2_show);
-        cv::waitKey();
-        // cv::imwrite("img_"+std::to_string(i) + ".png", img2_show);
+        // cv::imshow("current", img2_show);
+        // cv::waitKey();
+        cv::imwrite("img_"+std::to_string(i) + "_ceres.png", img2_show);
 
     }
+    // debug.close();
     return 0;
 }
