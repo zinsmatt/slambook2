@@ -66,6 +66,12 @@ target_link_libraries(pose_estimation_3d2d_ceres_sophus
         Sophus::Sophus
         ${OpenCV_LIBS})
 
+add_executable(pose_estimation_3d2d_ceres_sophus_analytical pose_estimation_3d2d_ceres_sophus_analytical.cpp)
+        target_link_libraries(pose_estimation_3d2d_ceres_sophus_analytical
+                ${CERES_LIBRARIES}
+                Sophus::Sophus
+                ${OpenCV_LIBS})
+
 add_executable(pose_estimation_3d2d pose_estimation_3d2d.cpp)
 target_link_libraries(pose_estimation_3d2d
         g2o::core

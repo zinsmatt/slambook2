@@ -98,10 +98,6 @@ class LocalParameterizationSE3 : public ceres::LocalParameterization {
     return true;
   }
 
-  virtual bool MultiplyByJacobian(const double* x, const int n_rows, const double* global_matrix, double *local_matrix) const
-  {
-    return ceres::LocalParameterization::MultiplyByJacobian(x, n_rows, global_matrix, local_matrix);
-  }
 
   virtual int GlobalSize() const { return SE3d::num_parameters; }
 
@@ -110,28 +106,116 @@ class LocalParameterizationSE3 : public ceres::LocalParameterization {
 
 
 
-struct ProjectionError
+// struct ProjectionError
+// {
+//   ProjectionError(const Eigen::Vector2d& measurement, const Eigen::Vector3d& point,
+//                   const Eigen::Matrix3d& K) : _x(measurement), _X(point), _K(K)
+//     {}
+
+//   template <class T>
+//   bool operator() (const T* const params, T* residuals) const
+//   {
+//     const Eigen::Map<const Sophus::SE3<T>> Rt(params);
+//     Eigen::Matrix<T, 3, 1> X(T(_X.x()), T(_X.y()), T(_X.z()));
+//     Eigen::Matrix<T, 3, 1> uv = _K * (Rt * X);
+//     residuals[0] = _x[0] - uv.x() / uv.z();
+//     residuals[1] = _x[1] - uv.y() / uv.z();
+//     // std::cout << "residuals: \n";
+//     // std::cout << residuals[0] << std::endl;
+//     // std::cout << residuals[1] << std::endl << std::endl;;
+
+//     // std::cout << T(residuals[0]) << "\n";
+//     // std::cout << T(residuals[1]) << "\n";
+//     return true;
+//   }
+
+//   private:
+//     Eigen::Vector2d _x;
+//     Eigen::Vector3d _X;
+//     Eigen::Matrix3d _K;
+// };
+
+
+class ProjectionError: public ceres::SizedCostFunction<2, 7>
 {
-  ProjectionError(const Eigen::Vector2d& measurement, const Eigen::Vector3d& point,
-                  const Eigen::Matrix3d& K) : _x(measurement), _X(point), _K(K)
-    {}
+  public:
+    ProjectionError(const Eigen::Vector2d& measurement, const Eigen::Vector3d& point,
+                  const Eigen::Matrix3d& K) : _x(measurement), _X(point), _K(K) {}
 
-  template <class T>
-  bool operator() (const T* const params, T* residuals) const
+  virtual bool Evaluate(double const * const * params,
+                        double *residuals,
+                        double **jacobians) const
   {
-    const Eigen::Map<const Sophus::SE3<T>> Rt(params);
-    Eigen::Matrix<T, 3, 1> X(T(_X.x()), T(_X.y()), T(_X.z()));
-    Eigen::Matrix<T, 3, 1> uv = _K * (Rt * X);
-    residuals[0] = _x[0] - uv.x() / uv.z();
-    residuals[1] = _x[1] - uv.y() / uv.z();
-    // std::cout << "residuals: \n";
-    // std::cout << residuals[0] << std::endl;
-    // std::cout << residuals[1] << std::endl << std::endl;;
+    const Eigen::Map<const Sophus::SE3d> Rt(params[0]);
+    Eigen::Vector3d Xc = Rt * _X;
+    Eigen::Vector3d Xp = Xc / Xc.z();
+    Eigen::Vector3d uv = _K * Xp;
+    residuals[0] = _x[0] - uv.x();
+    residuals[1] = _x[1] - uv.y();
 
-    // std::cout << T(residuals[0]) << "\n";
-    // std::cout << T(residuals[1]) << "\n";
-    return true;
+    if (!jacobians)
+      return true;
+
+    double *J = jacobians[0];
+    if (!J)
+      return true;
+
+ 
+    double x = Xc.x();
+    double y = Xc.y();
+    double z = Xc.z();
+    double z2 = z * z;
+
+    Eigen::Matrix2d dedxp; // derivate wrt. x projected
+    dedxp << -_K(0, 0), 0.0,
+             0.0, -_K(1, 1);
+
+    Eigen::Matrix<double, 2, 3> dxpdXc; // derivative of x projected wrt. Xcam
+    dxpdXc << 1.0/z, 0.0, -x/z2,
+              0.0, 1.0/z, -y/z2;
+
+    double qx = params[0][0];
+    double qy = params[0][1];
+    double qz = params[0][2];
+    double qw = params[0][3];
+    double x3 = _X.x();
+    double y3 = _X.y();
+    double z3 = _X.z();
+
+    Eigen::Matrix<double, 3, 4> dXcdq; // derivative of Xcam wrt. quaternions
+    dXcdq(0, 0) = 2*qy*y3 + 2*qz*z3;
+    dXcdq(0, 1) = 2*qw*z3 + 2*qx*y3 - 4*qy*x3;
+    dXcdq(0, 2) = -2*qw*y3 + 2*qx*z3 - 4*qz*x3;
+    dXcdq(0, 3) = 2*qy*z3 - 2*qz*y3;
+
+    dXcdq(1, 0) = -2*qw*z3 - 4*qx*y3 + 2*qy*x3;
+    dXcdq(1, 1) = 2*qx*x3 + 2*qz*z3;
+    dXcdq(1, 2) = 2*qw*x3 + 2*qy*z3 - 4*qz*y3;
+    dXcdq(1, 3) = -2*qx*z3 + 2*qz*x3;
+
+    dXcdq(2, 0) = 2*qw*y3 - 4*qx*z3 + 2*qz*x3;
+    dXcdq(2, 1) = -2*qw*x3 - 4*qy*z3 + 2*qz*y3;
+    dXcdq(2, 2) = 2*qx*x3 + 2*qy*y3;
+    dXcdq(2, 3) = 2*qx*y3 - 2*qy*x3;
+
+
+    Eigen::Matrix3d dXcdt = Eigen::Matrix3d::Identity();  // derivative of Xcam wrt. translation
+
+    
+    Eigen::Matrix<double, 2, 7> J_tmp;
+    J_tmp.block<2, 4>(0, 0) = dedxp * dxpdXc * dXcdq;
+    J_tmp.block<2, 3>(0, 4) = dedxp * dxpdXc * dXcdt;
+
+    for (int i = 0; i < 7; ++i)
+    {
+      J[i] = J_tmp(0, i);
+      J[i+7] = J_tmp(1, i);
+    }
+    // std::cout << m << "\n";
+
+    return true;    
   }
+
 
   private:
     Eigen::Vector2d _x;
@@ -142,15 +226,14 @@ struct ProjectionError
 
 
 
+
 void pose_refinement_ceres(const VecVector3d& points_3d, const VecVector2d& points_2d, const Eigen::Matrix3d& K, Sophus::SE3d& pose)
 {
   ceres::Problem problem;
   for (int i = 0; i < points_3d.size(); ++i)
   {
     problem.AddResidualBlock(
-      new ceres::AutoDiffCostFunction<ProjectionError, 2, 7>(
-        new ProjectionError(points_2d[i], points_3d[i], K)
-      ),
+      new ProjectionError(points_2d[i], points_3d[i], K),
       nullptr,
       pose.data()
     );
