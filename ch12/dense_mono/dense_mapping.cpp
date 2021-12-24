@@ -21,6 +21,8 @@ using namespace Eigen;
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include "plot.h"
+
 using namespace cv;
 
 /**********************************************
@@ -136,7 +138,7 @@ inline double getBilinearInterpolatedValue(const Mat &img, const Vector2d &pt) {
 // ------------------------------------------------------------------
 // 一些小工具
 // 显示估计的深度图
-void plotDepth(const Mat &depth_truth, const Mat &depth_estimate);
+// void plotDepth(const Mat &depth_truth, const Mat &depth_estimate);
 
 // 像素到相机坐标系
 inline Vector3d px2cam(const Vector2d px) {
@@ -161,12 +163,12 @@ inline bool inside(const Vector2d &pt) {
            && pt(0, 0) + boarder < width && pt(1, 0) + boarder <= height;
 }
 
-// 显示极线匹配
-void showEpipolarMatch(const Mat &ref, const Mat &curr, const Vector2d &px_ref, const Vector2d &px_curr);
+// // 显示极线匹配
+// void showEpipolarMatch(const Mat &ref, const Mat &curr, const Vector2d &px_ref, const Vector2d &px_curr);
 
-// 显示极线
-void showEpipolarLine(const Mat &ref, const Mat &curr, const Vector2d &px_ref, const Vector2d &px_min_curr,
-                      const Vector2d &px_max_curr);
+// // 显示极线
+// void showEpipolarLine(const Mat &ref, const Mat &curr, const Vector2d &px_ref, const Vector2d &px_min_curr,
+//                       const Vector2d &px_max_curr);
 
 /// 评测深度估计
 void evaludateDepth(const Mat &depth_truth, const Mat &depth_estimate);
@@ -208,8 +210,9 @@ int main(int argc, char **argv) {
         evaludateDepth(ref_depth, depth);
         std::cout << "after eval depth " << std::endl;
         plotDepth(ref_depth, depth);
-        imshow("image", curr);
-        waitKey(1);
+        // imshow("image", curr);
+        // waitKey(1);
+        plotCur(curr);
     }
 
     cout << "estimation returns, saving depth map ..." << endl;
@@ -443,13 +446,13 @@ bool updateDepthFilter(
     return true;
 }
 
-// 后面这些太简单我就不注释了（其实是因为懒）
-void plotDepth(const Mat &depth_truth, const Mat &depth_estimate) {
-    imshow("depth_truth", depth_truth * 0.4);
-    imshow("depth_estimate", depth_estimate * 0.4);
-    imshow("depth_error", depth_truth - depth_estimate);
-    waitKey(1);
-}
+// // 后面这些太简单我就不注释了（其实是因为懒）
+// void plotDepth(const Mat &depth_truth, const Mat &depth_estimate) {
+//     imshow("depth_truth", depth_truth * 0.4);
+//     imshow("depth_estimate", depth_estimate * 0.4);
+//     imshow("depth_error", depth_truth - depth_estimate);
+//     waitKey(1);
+// }
 
 void evaludateDepth(const Mat &depth_truth, const Mat &depth_estimate) {
     double ave_depth_error = 0;     // 平均误差
@@ -470,33 +473,33 @@ void evaludateDepth(const Mat &depth_truth, const Mat &depth_estimate) {
     cout << "Average squared error = " << ave_depth_error_sq << ", average error: " << ave_depth_error << endl;
 }
 
-void showEpipolarMatch(const Mat &ref, const Mat &curr, const Vector2d &px_ref, const Vector2d &px_curr) {
-    Mat ref_show, curr_show;
-    cv::cvtColor(ref, ref_show, CV_GRAY2BGR);
-    cv::cvtColor(curr, curr_show, CV_GRAY2BGR);
+// void showEpipolarMatch(const Mat &ref, const Mat &curr, const Vector2d &px_ref, const Vector2d &px_curr) {
+//     Mat ref_show, curr_show;
+//     cv::cvtColor(ref, ref_show, CV_GRAY2BGR);
+//     cv::cvtColor(curr, curr_show, CV_GRAY2BGR);
 
-    cv::circle(ref_show, cv::Point2f(px_ref(0, 0), px_ref(1, 0)), 5, cv::Scalar(0, 0, 250), 2);
-    cv::circle(curr_show, cv::Point2f(px_curr(0, 0), px_curr(1, 0)), 5, cv::Scalar(0, 0, 250), 2);
+//     cv::circle(ref_show, cv::Point2f(px_ref(0, 0), px_ref(1, 0)), 5, cv::Scalar(0, 0, 250), 2);
+//     cv::circle(curr_show, cv::Point2f(px_curr(0, 0), px_curr(1, 0)), 5, cv::Scalar(0, 0, 250), 2);
 
-    imshow("ref", ref_show);
-    imshow("curr", curr_show);
-    waitKey(1);
-}
+//     imshow("ref", ref_show);
+//     imshow("curr", curr_show);
+//     waitKey(1);
+// }
 
-void showEpipolarLine(const Mat &ref, const Mat &curr, const Vector2d &px_ref, const Vector2d &px_min_curr,
-                      const Vector2d &px_max_curr) {
+// void showEpipolarLine(const Mat &ref, const Mat &curr, const Vector2d &px_ref, const Vector2d &px_min_curr,
+//                       const Vector2d &px_max_curr) {
 
-    Mat ref_show, curr_show;
-    cv::cvtColor(ref, ref_show, CV_GRAY2BGR);
-    cv::cvtColor(curr, curr_show, CV_GRAY2BGR);
+//     Mat ref_show, curr_show;
+//     cv::cvtColor(ref, ref_show, CV_GRAY2BGR);
+//     cv::cvtColor(curr, curr_show, CV_GRAY2BGR);
 
-    cv::circle(ref_show, cv::Point2f(px_ref(0, 0), px_ref(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
-    cv::circle(curr_show, cv::Point2f(px_min_curr(0, 0), px_min_curr(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
-    cv::circle(curr_show, cv::Point2f(px_max_curr(0, 0), px_max_curr(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
-    cv::line(curr_show, Point2f(px_min_curr(0, 0), px_min_curr(1, 0)), Point2f(px_max_curr(0, 0), px_max_curr(1, 0)),
-             Scalar(0, 255, 0), 1);
+//     cv::circle(ref_show, cv::Point2f(px_ref(0, 0), px_ref(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
+//     cv::circle(curr_show, cv::Point2f(px_min_curr(0, 0), px_min_curr(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
+//     cv::circle(curr_show, cv::Point2f(px_max_curr(0, 0), px_max_curr(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
+//     cv::line(curr_show, Point2f(px_min_curr(0, 0), px_min_curr(1, 0)), Point2f(px_max_curr(0, 0), px_max_curr(1, 0)),
+//              Scalar(0, 255, 0), 1);
 
-    imshow("ref", ref_show);
-    imshow("curr", curr_show);
-    waitKey(1);
-}
+//     imshow("ref", ref_show);
+//     imshow("curr", curr_show);
+//     waitKey(1);
+// }
