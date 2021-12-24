@@ -20,12 +20,16 @@ add_executable(bundle_adjustment_g2o bundle_adjustment_g2o.cpp)
 add_executable(bundle_adjustment_g2o_custom bundle_adjustment_g2o_custom.cpp)
 add_executable(bundle_adjustment_g2o_custom_analytical bundle_adjustment_g2o_custom_analytical.cpp)
 add_executable(bundle_adjustment_g2o_custom_analytical_no_intrinsics bundle_adjustment_g2o_custom_analytical_no_intrinsics.cpp)
+add_executable(bundle_adjustment_g2o_custom_autodiff bundle_adjustment_g2o_custom_autodiff.cpp)
+
 add_executable(bundle_adjustment_ceres bundle_adjustment_ceres.cpp)
 add_executable(bundle_adjustment_ceres_custom bundle_adjustment_ceres_custom.cpp)
 
 target_link_libraries(bundle_adjustment_ceres ${CERES_LIBRARIES} Sophus::Sophus bal_common)
 target_link_libraries(bundle_adjustment_ceres_custom ${CERES_LIBRARIES} Sophus::Sophus bal_common)
+
 target_link_libraries(bundle_adjustment_g2o g2o::core g2o::stuff g2o::csparse_extension cxsparse Sophus::Sophus bal_common g2o::types_sba)
 target_link_libraries(bundle_adjustment_g2o_custom g2o::core g2o::stuff g2o::csparse_extension cxsparse Sophus::Sophus bal_common g2o::types_sba)
 target_link_libraries(bundle_adjustment_g2o_custom_analytical g2o::core g2o::stuff g2o::csparse_extension cxsparse Sophus::Sophus bal_common g2o::types_sba)
 target_link_libraries(bundle_adjustment_g2o_custom_analytical_no_intrinsics g2o::core g2o::stuff g2o::csparse_extension cxsparse Sophus::Sophus bal_common g2o::types_sba)
+target_link_libraries(bundle_adjustment_g2o_custom_autodiff ${CERES_LIBRARIES} g2o::core g2o::stuff g2o::csparse_extension cxsparse Sophus::Sophus bal_common g2o::types_sba)
