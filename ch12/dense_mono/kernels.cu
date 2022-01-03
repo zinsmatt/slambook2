@@ -8,8 +8,6 @@
 #include "constants.h"
 
 
-#define  D 2000000
-
 __device__
 inline double getBilinearInterpolatedValue_cuda(const unsigned char *img, double pt[2]) {
     const unsigned char* d = &img[(int)pt[1] * width + (int)pt[0]];
@@ -120,13 +118,9 @@ __device__
 bool epipolar_search_cuda(const unsigned char* ref, const unsigned char* cur, 
 const double Tcr[3][4], const double pt[2],
 double depth_mu, double depth_sigma2, 
-double best_pc[2], double epipolar_dir[2],
-double *debug, int &a)
+double best_pc[2], double epipolar_dir[2])
 {
 
-// printf("%lf %lf %lf %f\n", Tcr[0][0],  Tcr[0][1],  Tcr[0][2],  Tcr[0][3]);
-// printf("%lf %lf %lf %f\n", Tcr[1][0],  Tcr[1][1],  Tcr[1][2],  Tcr[1][3]);
-// printf("%lf %lf %lf %f\n\n", Tcr[2][0],  Tcr[2][1],  Tcr[2][2],  Tcr[2][3]);
     double depth_sigma = sqrt(depth_sigma2);
     double dmax = depth_mu + 3 * depth_sigma;
     double dmin = depth_mu - 3 * depth_sigma;
@@ -143,7 +137,6 @@ double *debug, int &a)
     transform_cuda(P_max, Tcr, P_max_cur);
     transform_cuda(P_min, Tcr, P_min_cur);
     transform_cuda(P_mu, Tcr, P_mu_cur);
-    // printf("epipolar search\n");
 
 
     double pc_max[2], pc_min[2], pc_mu[2];
@@ -165,22 +158,9 @@ double *debug, int &a)
     if (half_range > 100) half_range = 100;
 
     double best_zncc = -1.0;
-    // debug[a++] = pc_mu[0];
-    // debug[a++] = pc_mu[1];
     for (double l = -half_range; l<= half_range; l+= 0.7)
     {
         double p[2] = {pc_mu[0] + l * epipolar_dir[0], pc_mu[1] + l * epipolar_dir[1]};
-        // if (a < D)
-        //     debug[a++] = pc_mu[0];
-        // if (a < D)
-        //     debug[a++] = pc_mu[1];
-
-        // if (a < D)
-        //     debug[a++] = l;
-        // if (a < D)
-        //     debug[a++] = epipolar_dir[0];
-
-
 
         if (p[0] < boarder || p[0] >= width-boarder || p[1] < boarder || p[1] >= height-boarder)
             continue; // p is outside the cur image
@@ -193,8 +173,6 @@ double *debug, int &a)
             best_pc[1] = p[1];
         }
     }
-    // std::cout << best_zncc << "\n";
-    // printf("%lf\n", best_zncc);
     if (best_zncc < 0.85)
         return false;
     else
@@ -334,28 +312,14 @@ void update_depth_filter_cuda(const double pr[2], const double pc[2], const doub
 
 
 __global__
-void process_pixel_cuda(int i, int j, const unsigned char* ref, const unsigned char* cur, Mat3x4 Tcr, Mat3x4 Trc,  double *depth, double *cov2, unsigned char *status, double *debug)
+void process_pixel_cuda(int i, int j, const unsigned char* ref, const unsigned char* cur, Mat3x4 Tcr, Mat3x4 Trc,  double *depth, double *cov2)
 // void process_pixel_cuda(int i, int j, const unsigned char* ref, const unsigned char* cur, double Tcr_[3][4], double Trc_[3][4],  double *depth, double *cov2, unsigned char *status)
 {
-    // j = boarder + blockIdx.x;
-    // i = boarder + blockIdx.y;
-    int a=0;
-    for (int i = boarder; i < height-boarder; ++i)
-    {
-        for (int j = boarder; j < width-boarder; ++j)
-        {
-
-
-
-
-
-//    printf("%d %d %d %d\n", i, j, threadIdx.x, threadIdx.y);
-//   depth[i*width+j] = 12.34;
-//   return ;
+    j = boarder + blockIdx.x;
+    i = boarder + blockIdx.y;
 
     double depth_mu = depth[i*width+j];
     double depth_sigma2 = cov2[i*width+j];
-    // printf("%d %d\n", i, j);
 
     double Tcr_[3][4];
     Tcr_[0][0] = Tcr.a00;
@@ -385,35 +349,19 @@ void process_pixel_cuda(int i, int j, const unsigned char* ref, const unsigned c
     Trc_[2][2] = Trc.a22;
     Trc_[2][3] = Trc.a23;
 
-    status[i*width+j] = 44;
     if (depth_sigma2 < min_cov || depth_sigma2 > max_cov)
-        continue;
+        return;
 
     double pr[2] = {j, i};
     double pc[2];
     double epipolar_dir[2];
 
-    bool found = epipolar_search_cuda(ref, cur, Tcr_, pr, depth_mu, depth_sigma2, pc, epipolar_dir, debug, a);
-    // std::cout << found << "\n";
-    //  printf("%d %d %lf %lf\n", i, j, pc[0], pc[1]);
-    // std::cout << a << std::endl;
-    // debug[a++] = pc[0];
-    // debug[a++] = pc[1];
-    // debug[a++] = epipolar_dir[0];
-    // debug[a++] = epipolar_dir[1];
+    bool found = epipolar_search_cuda(ref, cur, Tcr_, pr, depth_mu, depth_sigma2, pc, epipolar_dir);
     
     if (!found)
-        continue;
+        return;
 
     update_depth_filter_cuda(pr, pc, Trc_, epipolar_dir, depth, cov2);
-
-
-
-
-
-                
-        }
-    }
 }
 
 
@@ -437,23 +385,11 @@ void wrapper_update_cuda(const unsigned char* ref, const unsigned char* cur, dou
     cudaMemcpy(depth_cuda, depth, size_double, cudaMemcpyHostToDevice);
     cudaMemcpy(cov2_cuda, cov2, size_double, cudaMemcpyHostToDevice);
 
-    unsigned char *status = new unsigned char[width*height];
-    unsigned char *status_cuda;
-    cudaMalloc(&status_cuda, size_uchar);
-    memset(status, 0, width*height);
-    cudaMemcpy(status_cuda, status, size_uchar, cudaMemcpyHostToDevice);
 
-    double *debug = new double[D];
-    double *debug_cuda;
-    cudaMalloc(&debug_cuda, D*sizeof(double));
-    std::fill(debug, debug + D, 0);
-
-// std::cout << height << " " << width << "\n";
     int A = 480 - 2 * boarder; // height
     int B = 640 - 2 * boarder; // width
-    // dim3 grid_dim(B, A);
-    dim3 grid_dim(1, 1);
-    dim3 block_dim(1, 1, 1);
+    dim3 grid_dim(B, A);
+    // dim3 grid_dim(1, 1);
     Mat3x4 Tcr_;
     Tcr_.a00 = Tcr[0][0];
     Tcr_.a01 = Tcr[0][1];
@@ -484,61 +420,16 @@ void wrapper_update_cuda(const unsigned char* ref, const unsigned char* cur, dou
 
 
 
-    process_pixel_cuda<<<grid_dim, 1>>>(0, 0, ref_cuda, cur_cuda, Tcr_, Trc_, depth_cuda, cov2_cuda, status_cuda, debug_cuda);
+    process_pixel_cuda<<<grid_dim, 1>>>(0, 0, ref_cuda, cur_cuda, Tcr_, Trc_, depth_cuda, cov2_cuda);
     cudaDeviceSynchronize();
 
 
     cudaMemcpy(depth, depth_cuda, size_double, cudaMemcpyDeviceToHost);
     cudaMemcpy(cov2, cov2_cuda, size_double, cudaMemcpyDeviceToHost);
-    cudaMemcpy(status, status_cuda, size_uchar, cudaMemcpyDeviceToHost);
-    cudaMemcpy(debug, debug_cuda, size_double*2, cudaMemcpyDeviceToHost);
-
-    // process_pixel_cuda(0, 0, ref, cur, Tcr_, Trc_, depth, cov2, status, debug);
-
-    // for (int i = boarder; i < height-boarder; ++i)
-    // {
-    //     for (int j = boarder; j < width-boarder; ++j)
-    //     {
-    //         process_pixel_cuda(i, j, ref, cur, Tcr_, Trc_, depth, cov2, status);
-    //     }
-    // }
-
-
-    bool good=true;
-    int total=0;
-    for (int i = boarder; i < std::min(A, height-boarder); i++)
-    {
-        for (int j = boarder; j < std::min(B, width-boarder); ++j)
-        {
-            // std::cout << depth[i*width+j] << " ";
-            // std::cout << (int)status[i*width+j] << " ";
-            total += status[i*width+j];
-            if (status[i*width+j] != 44)
-                good = false;
-            // std::cout << depth[i*width+j] << " ";
-            // if (abs(depth[i*width+j]-12.34) > 0.001)
-            // {
-            //     std::cout << "error !! " << i << " " << j << " ::> " << depth[i*width+j] << "\n";
-            // }
-        }
-        //  std::cout << "\n";
-    }
-    std::cout << "======> " << good << "\n";
-    std::cout << "======> " << total << " / " << (width-2*boarder) * (height-2*boarder) << "\n";
-
-    // std::ofstream out("debug.txt");
-    // for (int i = 0; i < width*height*2; i += 2)
-    // {
-    //     out << debug[i] << " " << debug[i+1] << "\n";
-    // }
-
-    // out.close();
 
 
     cudaFree(ref_cuda);
     cudaFree(cur_cuda);
     cudaFree(depth_cuda);
     cudaFree(cov2_cuda);
-    delete[] status;
-    delete[] debug;
 }

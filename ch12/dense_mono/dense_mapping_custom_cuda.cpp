@@ -204,7 +204,6 @@ int main(int argc, char **argv) {
         plotCur(curr);
         // imshow("image", curr);
         // waitKey(1);
-        if (index == 2) break;
     }
 
     cout << "estimation returns, saving depth map ..." << endl;
