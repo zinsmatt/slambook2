@@ -110,55 +110,55 @@ void evaludateDepth(const Mat &depth_truth, const Mat &depth_estimate);
 // }
 
 
-void update(cv::Mat ref, cv::Mat cur, const Sophus::SE3d& Tcr, cv::Mat depth, cv::Mat cov2)
-{
-    Eigen::Vector2d pc;
-    Eigen::Vector2d epipolar_dir;
-    double pc_out[3];
-    double epipolar_dir_out[2];
+// void update(cv::Mat ref, cv::Mat cur, const Sophus::SE3d& Tcr, cv::Mat depth, cv::Mat cov2)
+// {
+//     Eigen::Vector2d pc;
+//     Eigen::Vector2d epipolar_dir;
+//     double pc_out[3];
+//     double epipolar_dir_out[2];
 
-    Sophus::SE3d Trc = Tcr.inverse();
-    double Tcr_data[3][4];
-    double Trc_data[3][4];
+//     Sophus::SE3d Trc = Tcr.inverse();
+//     double Tcr_data[3][4];
+//     double Trc_data[3][4];
 
-    Eigen::Matrix<double, 3, 4> temp_cr = Tcr.matrix3x4();
-    Eigen::Matrix<double, 3, 4> temp_rc = Trc.matrix3x4();
-    for (int i = 0; i < 3; ++i)
-    {
+//     Eigen::Matrix<double, 3, 4> temp_cr = Tcr.matrix3x4();
+//     Eigen::Matrix<double, 3, 4> temp_rc = Trc.matrix3x4();
+//     for (int i = 0; i < 3; ++i)
+//     {
 
-        for (int j = 0; j < 4; ++j)
-        {
-            Tcr_data[i][j] = temp_cr(i, j);
-            Trc_data[i][j] = temp_rc(i, j);
-        }
-    }
+//         for (int j = 0; j < 4; ++j)
+//         {
+//             Tcr_data[i][j] = temp_cr(i, j);
+//             Trc_data[i][j] = temp_rc(i, j);
+//         }
+//     }
 
-    int total=0;
-    for (int j = boarder; j < width-boarder; ++j)
-    {
-        for (int i = boarder; i < height-boarder; ++i)
-        {
-            double depth_mu = depth.at<double>(i, j);
-            double depth_sigma2 = cov2.at<double>(i, j);
-            if (depth_sigma2 < min_cov || depth_sigma2 > max_cov)
-                continue;
-            Eigen::Vector2d pr(j, i);
-            // bool found = epipolar_search(ref, cur, Tcr, pr, depth_mu, depth_sigma2, pc, epipolar_dir);
-            bool found = epipolar_search_cuda(ref.ptr<unsigned char>(0), cur.ptr<unsigned char>(0),
-                                               Tcr_data, pr.data(),
-                                               depth_mu, depth_sigma2,
-                                               pc.data(), epipolar_dir.data());
-            total += found;
-            if (!found)
-                continue;
-            // showEpipolarMatch(ref, cur, pr, pc);
+//     int total=0;
+//     for (int j = boarder; j < width-boarder; ++j)
+//     {
+//         for (int i = boarder; i < height-boarder; ++i)
+//         {
+//             double depth_mu = depth.at<double>(i, j);
+//             double depth_sigma2 = cov2.at<double>(i, j);
+//             if (depth_sigma2 < min_cov || depth_sigma2 > max_cov)
+//                 continue;
+//             Eigen::Vector2d pr(j, i);
+//             // bool found = epipolar_search(ref, cur, Tcr, pr, depth_mu, depth_sigma2, pc, epipolar_dir);
+//             bool found = epipolar_search_cuda(ref.ptr<unsigned char>(0), cur.ptr<unsigned char>(0),
+//                                                Tcr_data, pr.data(),
+//                                                depth_mu, depth_sigma2,
+//                                                pc.data(), epipolar_dir.data());
+//             total += found;
+//             if (!found)
+//                 continue;
+//             // showEpipolarMatch(ref, cur, pr, pc);
 
-            // update_depth_filter(pr, pc, Tcr, epipolar_dir, depth, cov2);
-            update_depth_filter_cuda(pr.data(), pc.data(), Trc_data, epipolar_dir.data(), depth.ptr<double>(0), cov2.ptr<double>(0));
-        }
-    }
-    std::cout << "total found " << total << " / " << width*height << "\n";
-}
+//             // update_depth_filter(pr, pc, Tcr, epipolar_dir, depth, cov2);
+//             update_depth_filter_cuda(pr.data(), pc.data(), Trc_data, epipolar_dir.data(), depth.ptr<double>(0), cov2.ptr<double>(0));
+//         }
+//     }
+//     std::cout << "total found " << total << " / " << width*height << "\n";
+// }
 
 
 int main(int argc, char **argv) {
@@ -204,6 +204,7 @@ int main(int argc, char **argv) {
         plotCur(curr);
         // imshow("image", curr);
         // waitKey(1);
+        if (index == 2) break;
     }
 
     cout << "estimation returns, saving depth map ..." << endl;

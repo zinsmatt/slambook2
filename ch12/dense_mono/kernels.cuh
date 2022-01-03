@@ -10,7 +10,7 @@ struct Mat3x4
 bool epipolar_search_cuda(const unsigned char* ref, const unsigned char* cur, 
                           const double Tcr[3][4], const double pt[2], 
                           double depth_mu, double depth_sigma2, 
-                          double best_pc[2], double epipolar_dir[2]);
+                          double best_pc[2], double epipolar_dir[2], double *debug, int &a);
 
 
 
