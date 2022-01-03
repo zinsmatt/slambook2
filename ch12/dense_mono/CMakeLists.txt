@@ -38,7 +38,9 @@ target_link_libraries(dense_mapping_custom_multithread ${THIRD_PARTY_LIBS} Eigen
 
 add_executable(dense_mapping_custom_cuda 
 dense_mapping_custom_cuda.cpp
-cuda_wrapper.cpp)
-# kernels.cu)
+cuda_wrapper.cpp
+kernels.cu
+kernels.cuh)
+
 target_link_libraries(dense_mapping_custom_cuda ${THIRD_PARTY_LIBS} Eigen3::Eigen plot_tools)
-# set_target_properties(dense_mapping_custom_cuda PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+set_target_properties(dense_mapping_custom_cuda PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

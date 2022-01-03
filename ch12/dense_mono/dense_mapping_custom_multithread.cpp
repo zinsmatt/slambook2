@@ -255,7 +255,7 @@ class ParallelDepthEstimator : public cv::ParallelLoopBody
 
     virtual void operator() (const cv::Range& range) const CV_OVERRIDE
     {
-        for (int i = range.start; i <= range.end; ++i)
+        for (int i = range.start; i < range.end; ++i)
         {
             for (int j = boarder; j < width-boarder; ++j)
             {
@@ -288,7 +288,7 @@ void update(cv::Mat ref, cv::Mat cur, const Sophus::SE3d& Tcr, cv::Mat depth, cv
     Eigen::Vector2d epipolar_dir;
     // std::cout << "Nb parallel splits: " << std::thread::hardware_concurrency() << "\n";
     ParallelDepthEstimator parallel_depth_estimator(ref, cur, Tcr, depth, cov2);
-    cv::parallel_for_(cv::Range(0, depth.rows), parallel_depth_estimator, std::thread::hardware_concurrency());
+    cv::parallel_for_(cv::Range(boarder, depth.rows-boarder), parallel_depth_estimator, std::thread::hardware_concurrency());
 }
 
 
