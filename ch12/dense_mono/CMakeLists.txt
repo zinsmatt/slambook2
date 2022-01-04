@@ -36,6 +36,11 @@ add_executable(dense_mapping_custom_multithread dense_mapping_custom_multithread
 target_link_libraries(dense_mapping_custom_multithread ${THIRD_PARTY_LIBS} Eigen3::Eigen plot_tools)
 
 
+add_executable(dense_mapping_custom_no_eigen dense_mapping_custom_no_eigen.cpp)
+target_link_libraries(dense_mapping_custom_no_eigen ${THIRD_PARTY_LIBS} Eigen3::Eigen plot_tools)
+
+
+
 add_executable(dense_mapping_custom_cuda 
 dense_mapping_custom_cuda.cpp
 cuda_wrapper.cpp

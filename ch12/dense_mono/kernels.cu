@@ -343,7 +343,6 @@ void wrapper_update_cuda(const unsigned char* ref, const unsigned char* cur, dou
     cudaMemcpyToSymbol(Trc_global, &Trc[0][0], 12 * sizeof(double), 0, cudaMemcpyHostToDevice);
 
     process_pixel_cuda<<<grid_dim, block_dim>>>(ref_cuda, cur_cuda, depth_cuda, cov2_cuda);
-    std::cout << cudaGetErrorName(cudaPeekAtLastError()) << std::endl;
     cudaDeviceSynchronize();
 
 

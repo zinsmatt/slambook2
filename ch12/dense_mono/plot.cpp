@@ -5,19 +5,19 @@
 
 
 void plotCur(const Mat &cur) {
-    // imshow("cur", cur);
-    // waitKey(1);
-    imwrite("cur.png", cur);
+    imshow("cur", cur);
+    waitKey(1);
+    // imwrite("cur.png", cur);
 }
 
 void plotDepth(const Mat &depth_truth, const Mat &depth_estimate) {
-    // imshow("depth_truth", depth_truth * 0.4);
-    // imshow("depth_estimate", depth_estimate * 0.4);
-    // imshow("depth_error", depth_truth - depth_estimate);
-    // waitKey(1);
-    imwrite("depth_truth.png", depth_truth * 0.4 * 255);
-    imwrite("depth_estimate.png", depth_estimate * 0.4 * 255);
-    imwrite("depth_error.png", (depth_truth - depth_estimate) * 255);
+    imshow("depth_truth", depth_truth * 0.4);
+    imshow("depth_estimate", depth_estimate * 0.4);
+    imshow("depth_error", depth_truth - depth_estimate);
+    waitKey(1);
+    // imwrite("depth_truth.png", depth_truth * 0.4 * 255);
+    // imwrite("depth_estimate.png", depth_estimate * 0.4 * 255);
+    // imwrite("depth_error.png", (depth_truth - depth_estimate) * 255);
 }
 
 

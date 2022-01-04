@@ -28,6 +28,13 @@ using namespace Eigen;
 
 using namespace cv;
 
+/**
+ * Dataset from:
+ * 
+ *   http://rpg.ifi.uzh.ch/datasets/remode_test_data.zip
+ * 
+ * */
+
 
 // ------------------------------------------------------------------
 // parameters
@@ -51,19 +58,20 @@ std::ofstream debug("debug_custom.txt");
 
 
 
-inline double getBilinearInterpolatedValue(const Mat &img, const Vector2d &pt) {
-    uchar *d = &img.data[int(pt(1, 0)) * img.step + int(pt(0, 0))];
-    double xx = pt(0, 0) - floor(pt(0, 0));
-    double yy = pt(1, 0) - floor(pt(1, 0));
+inline double getBilinearInterpolatedValue_eigen(const Mat &img, const Eigen::Vector2d &pt) {
+    uchar *d = &img.data[int(pt[1]) * img.step + int(pt[0])];
+    double xx = pt[0] - floor(pt[0]);
+    double yy = pt[1] - floor(pt[1]);
     return ((1 - xx) * (1 - yy) * double(d[0]) +
             xx * (1 - yy) * double(d[1]) +
             (1 - xx) * yy * double(d[img.step]) +
             xx * yy * double(d[img.step + 1])) / 255.0;
 }
 
+
 // ------------------------------------------------------------------
 
-inline Vector3d px2cam(const Vector2d px) {
+inline Vector3d px2cam(const Vector2d &px) {
     return Vector3d(
         (px(0, 0) - cx) / fx,
         (px(1, 0) - cy) / fy,
@@ -71,7 +79,7 @@ inline Vector3d px2cam(const Vector2d px) {
     );
 }
 
-inline Vector2d cam2px(const Vector3d p_cam) {
+inline Vector2d cam2px(const Vector3d &p_cam) {
     return Vector2d(
         p_cam(0, 0) * fx / p_cam(2, 0) + cx,
         p_cam(1, 0) * fy / p_cam(2, 0) + cy
@@ -95,10 +103,11 @@ bool readDatasetFiles(
 void evaludateDepth(const Mat &depth_truth, const Mat &depth_estimate);
 // ------------------------------------------------------------------
 
-double ZNCC(cv::Mat im1, const Eigen::Vector2d& pt1, cv::Mat im2, Eigen::Vector2d& pt2)
+double ZNCC(const cv::Mat& im1, const Eigen::Vector2d& pt1, const cv::Mat& im2, Eigen::Vector2d& pt2)
 {
     // no need to consider block partly outside because of boarder
-    std::vector<double> v1(ncc_area, 0.0), v2(ncc_area, 0.0);
+    // std::vector<double> v1(ncc_area, 0.0), v2(ncc_area, 0.0); // much slower
+    double v1[ncc_area], v2[ncc_area];
     double s1 = 0.0, s2 = 0.0;
     int idx = 0;
     for (int i = -ncc_window_size; i <= ncc_window_size; ++i)
@@ -106,7 +115,11 @@ double ZNCC(cv::Mat im1, const Eigen::Vector2d& pt1, cv::Mat im2, Eigen::Vector2
         for (int j = -ncc_window_size; j <= ncc_window_size; ++j)
         {
             double val_1 = static_cast<double>(im1.at<uchar>(pt1.y()+i, pt1.x()+j)) / 255;
-            double val_2 = getBilinearInterpolatedValue(im2, pt2 + Eigen::Vector2d(j, i));
+            Eigen::Vector2d temp_p2 = pt2;
+            temp_p2[0] += j;
+            temp_p2[1] += i;
+            double val_2 = getBilinearInterpolatedValue_eigen(im2, temp_p2);
+
             s1 += val_1;
             s2 += val_2;
             v1[idx] = val_1;
@@ -120,7 +133,7 @@ double ZNCC(cv::Mat im1, const Eigen::Vector2d& pt1, cv::Mat im2, Eigen::Vector2
 
     double numerator = 0.0;
     double den1 = 0.0, den2 = 0.0;
-    for (int i = 0; i < v1.size(); ++i)
+    for (int i = 0; i < ncc_area; ++i)
     {
         double zv1 = v1[i] - mean_1;
         double zv2 = v2[i] - mean_2;

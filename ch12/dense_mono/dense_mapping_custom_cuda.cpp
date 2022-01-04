@@ -32,8 +32,12 @@ using namespace Eigen;
 using namespace cv;
 
 
-
-std::ofstream debug("debug_custom.txt");
+/**
+ * Dataset from:
+ * 
+ *   http://rpg.ifi.uzh.ch/datasets/remode_test_data.zip
+ * 
+ * */
 
 
 void plotDepth(const Mat &depth_truth, const Mat &depth_estimate);
@@ -52,113 +56,7 @@ void showEpipolarLine(const Mat &ref, const Mat &curr, const Vector2d &px_ref, c
                       const Vector2d &px_max_curr);
 
 void evaludateDepth(const Mat &depth_truth, const Mat &depth_estimate);
-// ------------------------------------------------------------------
 
-
-// void update_multithread(cv::Mat ref, cv::Mat cur, const Sophus::SE3d& Tcr, cv::Mat depth, cv::Mat cov2)
-// {
-//     Sophus::SE3d Trc = Tcr.inverse();
-//     double Tcr_data[3][4];
-//     double Trc_data[3][4];
-
-//     Eigen::Matrix<double, 3, 4> temp_cr = Tcr.matrix3x4();
-//     Eigen::Matrix<double, 3, 4> temp_rc = Trc.matrix3x4();
-//     for (int i = 0; i < 3; ++i)
-//     {
-
-//         for (int j = 0; j < 4; ++j)
-//         {
-//             Tcr_data[i][j] = temp_cr(i, j);
-//             Trc_data[i][j] = temp_rc(i, j);
-//         }
-//     }
-
-
-//     cv::setNumThreads(std::thread::hardware_concurrency());
-//     cv::parallel_for_(cv::Range(boarder, depth.rows-boarder),
-//         [&](const Range& range){
-
-//             // Eigen::Vector2d pc;
-//             // Eigen::Vector2d epipolar_dir;
-
-//             double pc[2];
-//             double epipolar_dir[2];
-//             for (int i = range.start; i < range.end; ++i)
-//             {
-//                 for (int j = boarder; j < width-boarder; ++j)
-//                 {
-//                     double depth_mu = depth.at<double>(i, j);
-//                     double depth_sigma2 = cov2.at<double>(i, j);
-//                     if (depth_sigma2 < min_cov || depth_sigma2 > max_cov)
-//                         continue;
-//                     Eigen::Vector2d pr(j, i);
-//                     // bool found = epipolar_search(ref, cur, Tcr, pr, depth_mu, depth_sigma2, pc, epipolar_dir);
-//                     bool found = epipolar_search_cuda(ref.ptr<unsigned char>(0), cur.ptr<unsigned char>(0),
-//                                                     Tcr_data, pr.data(),
-//                                                     depth_mu, depth_sigma2,
-//                                                     pc, epipolar_dir);
-
-//                     if (!found)
-//                         continue;
-//                     // showEpipolarMatch(ref, cur, pr, pc);
-//                     //update_depth_filter(pr, pc, Tcr, epipolar_dir, depth, cov2);
-//                     update_depth_filter_cuda(pr.data(), pc, Trc_data, epipolar_dir, depth.ptr<double>(0), cov2.ptr<double>(0));
-//                 }
-//             }
-//         }
-//         );
-// }
-
-
-// void update(cv::Mat ref, cv::Mat cur, const Sophus::SE3d& Tcr, cv::Mat depth, cv::Mat cov2)
-// {
-//     Eigen::Vector2d pc;
-//     Eigen::Vector2d epipolar_dir;
-//     double pc_out[3];
-//     double epipolar_dir_out[2];
-
-//     Sophus::SE3d Trc = Tcr.inverse();
-//     double Tcr_data[3][4];
-//     double Trc_data[3][4];
-
-//     Eigen::Matrix<double, 3, 4> temp_cr = Tcr.matrix3x4();
-//     Eigen::Matrix<double, 3, 4> temp_rc = Trc.matrix3x4();
-//     for (int i = 0; i < 3; ++i)
-//     {
-
-//         for (int j = 0; j < 4; ++j)
-//         {
-//             Tcr_data[i][j] = temp_cr(i, j);
-//             Trc_data[i][j] = temp_rc(i, j);
-//         }
-//     }
-
-//     int total=0;
-//     for (int j = boarder; j < width-boarder; ++j)
-//     {
-//         for (int i = boarder; i < height-boarder; ++i)
-//         {
-//             double depth_mu = depth.at<double>(i, j);
-//             double depth_sigma2 = cov2.at<double>(i, j);
-//             if (depth_sigma2 < min_cov || depth_sigma2 > max_cov)
-//                 continue;
-//             Eigen::Vector2d pr(j, i);
-//             // bool found = epipolar_search(ref, cur, Tcr, pr, depth_mu, depth_sigma2, pc, epipolar_dir);
-//             bool found = epipolar_search_cuda(ref.ptr<unsigned char>(0), cur.ptr<unsigned char>(0),
-//                                                Tcr_data, pr.data(),
-//                                                depth_mu, depth_sigma2,
-//                                                pc.data(), epipolar_dir.data());
-//             total += found;
-//             if (!found)
-//                 continue;
-//             // showEpipolarMatch(ref, cur, pr, pc);
-
-//             // update_depth_filter(pr, pc, Tcr, epipolar_dir, depth, cov2);
-//             update_depth_filter_cuda(pr.data(), pc.data(), Trc_data, epipolar_dir.data(), depth.ptr<double>(0), cov2.ptr<double>(0));
-//         }
-//     }
-//     std::cout << "total found " << total << " / " << width*height << "\n";
-// }
 
 
 int main(int argc, char **argv) {
@@ -193,12 +91,12 @@ int main(int argc, char **argv) {
         SE3d pose_curr_TWC = poses_TWC[index];
         SE3d pose_T_C_R = pose_curr_TWC.inverse() * pose_ref_TWC;   // T_C_W * T_W_R = T_C_R
         chrono::steady_clock::time_point t1 = chrono::steady_clock::now();
-        // update(ref, curr, pose_T_C_R, depth, depth_cov2);
-        // update_multithread(ref, curr, pose_T_C_R, depth, depth_cov2);
         update_cuda(ref, curr, pose_T_C_R, depth, depth_cov2);
         chrono::steady_clock::time_point t2 = chrono::steady_clock::now();
+
         auto time_used = chrono::duration_cast<chrono::duration<double>>(t2 - t1);
         std::cout << "Time used: " << time_used.count() << "s\n";
+
         evaludateDepth(ref_depth, depth);
         plotDepth(ref_depth, depth);
         plotCur(curr);
@@ -210,7 +108,6 @@ int main(int argc, char **argv) {
     imwrite("depth.png", depth);
     cout << "done." << endl;
 
-    debug.close();
     return 0;
 }
 
